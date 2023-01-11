@@ -7,6 +7,8 @@ from typing import Any, Mapping, Set, Tuple, Union
 
 from airbyte_cdk.sources.declarative.parsers.custom_exceptions import CircularReferenceException, UndefinedReferenceException
 
+REF_TAG = "$ref"
+
 
 class ManifestReferenceResolver:
     """
@@ -94,8 +96,6 @@ class ManifestReferenceResolver:
     until we find a key with the given path, or until there is nothing to traverse.
     """
 
-    ref_tag = "$ref"
-
     def preprocess_manifest(self, manifest: Mapping[str, Any]) -> Mapping[str, Any]:
         """
         :param manifest: incoming manifest that could have references to previously defined components
@@ -106,9 +106,9 @@ class ManifestReferenceResolver:
     def _evaluate_node(self, node: Any, manifest: Mapping[str, Any], visited: Set):
         if isinstance(node, dict):
             evaluated_dict = {k: self._evaluate_node(v, manifest, visited) for k, v in node.items() if not self._is_ref_key(k)}
-            if self.ref_tag in node:
+            if REF_TAG in node:
                 # The node includes a $ref key, so we splat the referenced value(s) into the evaluated dict
-                evaluated_ref = self._evaluate_node(node[self.ref_tag], manifest, visited)
+                evaluated_ref = self._evaluate_node(node[REF_TAG], manifest, visited)
                 if not isinstance(evaluated_ref, dict):
                     return evaluated_ref
                 else:
@@ -118,30 +118,44 @@ class ManifestReferenceResolver:
                 return evaluated_dict
         elif isinstance(node, list):
             return [self._evaluate_node(v, manifest, visited) for v in node]
-        elif isinstance(node, str) and node.startswith("*ref("):
+        elif self._is_ref(node):
             if node in visited:
                 raise CircularReferenceException(node)
             visited.add(node)
-            ret = self._evaluate_node(self._lookup_reference_value(node, manifest), manifest, visited)
+            ret = self._evaluate_node(self._lookup_ref_value(node, manifest), manifest, visited)
             visited.remove(node)
             return ret
         else:
             return node
 
-    def _is_ref_key(self, key):
-        return key == self.ref_tag
+    def _lookup_ref_value(self, reference: str, manifest: Mapping[str, Any]) -> Any:
+        path = re.match(r"#/(.*)", reference).groups()[0]
+        if not path:
+            raise UndefinedReferenceException(path, reference)
+        try:
+            return self._read_ref_value(path, manifest)
+        except (AttributeError, KeyError, IndexError):
+            raise UndefinedReferenceException(path, reference)
 
-    def _lookup_reference_value(self, reference: str, manifest: Mapping[str, Any]) -> Any:
+    def _lookup_ref_value_old(self, reference: str, manifest: Mapping[str, Any]) -> Any:
         path = re.match("\\*ref\\(([^)]+)\\)", reference).groups()[0]
         if not path:
             raise UndefinedReferenceException(path, reference)
         try:
-            return self._read_reference_value(path, manifest)
+            return self._read_ref_value(path, manifest)
         except (KeyError, IndexError):
             raise UndefinedReferenceException(path, reference)
 
     @staticmethod
-    def _read_reference_value(ref: str, manifest_node: Mapping[str, Any]) -> Any:
+    def _is_ref(node: Any) -> bool:
+        return isinstance(node, str) and (node.startswith("*ref(") or node.startswith("#/"))
+
+    @staticmethod
+    def _is_ref_key(key) -> bool:
+        return key == REF_TAG
+
+    @staticmethod
+    def _read_ref_value(ref: str, manifest_node: Mapping[str, Any]) -> Any:
         """
         Read the value at the referenced location of the manifest.
 
@@ -178,18 +192,20 @@ def _parse_path(ref: str) -> Tuple[Union[str, int], str]:
 
     A path component may be a string key, or an int index.
 
-    >>> _parse_path("foo.bar")
+    >>> _parse_path("foo/bar")
     "foo", "bar"
-    >>> _parse_path("foo[7][8].bar")
-    "foo", "[7][8].bar"
-    >>> _parse_path("[7][8].bar")
-    7, "[8].bar"
-    >>> _parse_path("[8].bar")
+    >>> _parse_path("foo/7/8/bar")
+    "foo", "7/8/bar"
+    >>> _parse_path("7/8/bar")
+    7, "8/bar"
+    >>> _parse_path("8/bar")
     8, "bar"
+    >>> _parse_path("8foo/bar")
+    "8foo", "bar"
     """
-    if match := re.match(r"^\[([0-9]+)\]\.?(.*)", ref):
-        idx, rest = match.groups()
-        result = int(idx), rest
-    else:
-        result = re.match(r"([^[.]*)\.?(.*)", ref).groups()
-    return result
+    match = re.match(r"([^/]*)/?(.*)", ref)
+    first, rest = match.groups()
+    try:
+        return int(first), rest
+    except ValueError:
+        return first, rest
