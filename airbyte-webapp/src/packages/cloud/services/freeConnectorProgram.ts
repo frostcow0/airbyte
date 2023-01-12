@@ -1,13 +1,13 @@
 import { useQuery } from "react-query";
 
-import { useCurrentWorkspace } from "hooks/services/useWorkspace";
 import { useDefaultRequestMiddlewares } from "services/useDefaultRequestMiddlewares";
+import { useCurrentWorkspaceId } from "services/workspaces/WorkspacesService";
 
 import { webBackendGetFreeConnectorProgramInfoForWorkspace } from "../lib/domain/freeConnectorProgram/api";
 import { useConfig } from "./config";
 
 export const useFreeConnectorProgramInfo = () => {
-  const { workspaceId } = useCurrentWorkspace();
+  const workspaceId = useCurrentWorkspaceId();
   const { cloudApiUrl } = useConfig();
   const config = { apiUrl: cloudApiUrl };
   const middlewares = useDefaultRequestMiddlewares();
