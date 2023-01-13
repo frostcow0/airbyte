@@ -8,6 +8,8 @@ import { StripeCheckoutSessionCreate } from "../lib/domain/stripe";
 import { useConfig } from "./config";
 import { useStripeCheckout } from "./stripe/StripeService";
 
+type StripeSetupCheckoutSessionCreate = Omit<StripeCheckoutSessionCreate, "stripeMode" | "quantity" | "workspaceId">;
+
 export const useFreeConnectorProgramInfo = () => {
   const workspaceId = useCurrentWorkspaceId();
   const { cloudApiUrl } = useConfig();
@@ -21,7 +23,7 @@ export const useFreeConnectorProgramInfo = () => {
 };
 
 export const useFreeConnectorEnrollmentGenerator = () => {
-  const createCheckoutMutation = useStripeCheckout();
+  const workspaceId = useCurrentWorkspaceId();
   const {
     mutateAsync: genericMutateAsync,
     mutate: genericMutate,
@@ -34,12 +36,12 @@ export const useFreeConnectorEnrollmentGenerator = () => {
     data,
     error,
     reset,
-  } = createCheckoutMutation;
+  } = useStripeCheckout();
   return {
-    mutate: (params: Omit<StripeCheckoutSessionCreate, "stripeMode" | "quantity">) =>
-      genericMutate({ ...params, stripeMode: "setup" }),
-    mutateAsync: (params: Omit<StripeCheckoutSessionCreate, "stripeMode" | "quantity">) =>
-      genericMutateAsync({ ...params, stripeMode: "setup" }),
+    mutate: (params: StripeSetupCheckoutSessionCreate) =>
+      genericMutate({ ...params, stripeMode: "setup", workspaceId }),
+    mutateAsync: (params: StripeSetupCheckoutSessionCreate) =>
+      genericMutateAsync({ ...params, stripeMode: "setup", workspaceId }),
     status,
     isError,
     isIdle,
