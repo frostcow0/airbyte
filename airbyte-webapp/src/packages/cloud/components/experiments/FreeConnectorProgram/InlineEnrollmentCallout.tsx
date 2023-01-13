@@ -6,7 +6,7 @@ import { Text } from "components/ui/Text";
 
 import styles from "./InlineEnrollmentCallout.module.scss";
 
-export const EnrollLink: React.FC<PropsWithChildren<unknown>> = ({ children }) => {
+const EnrollLink: React.FC<PropsWithChildren<unknown>> = ({ children }) => {
   const onEnrollClick = () => {
     return null;
   };
